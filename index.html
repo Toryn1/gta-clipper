@@ -44,19 +44,55 @@ button:disabled{opacity:.5;cursor:default}
 .login input{width:100%;margin:6px 0 14px}
 .warn{color:#ffb347}
 code{background:#000;padding:2px 6px;border-radius:4px}
+.hbtns{display:flex;gap:10px;align-items:center}
+.quick{display:flex;gap:8px;flex-wrap:wrap;padding:12px 24px 0}
+.quick button{background:#26262c;border:1px solid var(--line);color:var(--text);font-weight:500;font-size:14px;border-radius:999px;padding:7px 14px}
+.quick button:hover{border-color:var(--acc)}
+.quick span{color:var(--muted);font-size:13px;align-self:center;margin-right:4px}
+#banner{margin:12px 24px 0;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,#3a1630,#1f1f23);border:1px solid #5a2448;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#banner p{margin:0;flex:1;min-width:220px}
+.empty{grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--muted)}
+.empty b{display:block;color:var(--text);font-size:18px;margin-bottom:6px}
+.empty button{margin-top:14px}
+#guide{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;overflow-y:auto;z-index:10}
+#guide.show{display:flex}
+.gbox{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:720px;width:100%;padding:26px 28px;position:relative}
+.gbox h2{margin:0 0 4px}
+.gbox h3{margin:26px 0 8px;color:var(--acc);font-size:16px}
+.gbox p,.gbox li{color:#d6d6dc}
+.gbox ol,.gbox ul{padding-left:20px}
+.gbox li{margin:5px 0}
+.gbox .close{position:absolute;top:14px;right:14px;padding:6px 12px}
+.gbox pre{background:#000;padding:10px 12px;border-radius:8px;overflow-x:auto;font-size:13px}
+.tabs{display:flex;gap:6px;margin:6px 0 8px}
+.tabs button{padding:5px 12px;font-size:13px}
+.tabs button.off{background:transparent;border:1px solid var(--line)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.step{background:#0e0e10;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;color:var(--muted)}
+.step b{display:block;color:var(--text);margin-bottom:2px}
+.step i{font-style:normal;color:var(--acc);font-weight:700;margin-right:4px}
 </style>
 </head>
 <body>
 
 <header>
   <h1>GTA 6 <span>Clip-Finder</span></h1>
-  <div id="who"></div>
+  <div class="hbtns">
+    <div id="who"></div>
+    <button class="ghost" onclick="openGuide()">❓ Anleitung</button>
+  </div>
 </header>
 
 <!-- Login -->
 <div id="loginBox" class="login" hidden>
-  <h2 style="margin-top:0">Mit Twitch verbinden</h2>
-  <p id="loginMsg">Einmal einloggen, dann siehst du die meistgesehenen Clips. Der Login bleibt nur in diesem Tab, gespeichert wird nichts.</p>
+  <h2 style="margin-top:0">Die besten GTA-6-Clips – ohne stundenlang Streams zu schauen</h2>
+  <p>Diese Seite zeigt dir die Twitch-Clips, die gerade am meisten angeschaut werden. Du suchst dir die guten raus und lädst sie herunter.</p>
+  <div class="steps">
+    <div class="step"><b><i>1</i>Einloggen</b>mit deinem Twitch-Account</div>
+    <div class="step"><b><i>2</i>Clips anschauen</b>die besten stehen oben</div>
+    <div class="step"><b><i>3</i>Auswählen & laden</b>mit einem Klick kopieren</div>
+  </div>
+  <p id="loginMsg">Gespeichert wird nichts: Der Login gilt nur für diesen Tab.</p>
   <div id="cidWrap">
     <label>Deine Twitch Client-ID (von dev.twitch.tv)
       <input id="cid" placeholder="z.B. abc123xyz..." autocomplete="off">
@@ -67,6 +103,18 @@ code{background:#000;padding:2px 6px;border-radius:4px}
 
 <!-- App -->
 <div id="app" hidden>
+  <div id="banner">
+    <p>👋 <b>Neu hier?</b> Klick einfach auf einen der Schnellstart-Knöpfe unten. Wie das Herunterladen geht, steht in der Anleitung.</p>
+    <button onclick="openGuide()">Anleitung öffnen</button>
+    <button class="ghost" onclick="document.getElementById('banner').remove()">Ausblenden</button>
+  </div>
+  <div class="quick">
+    <span>Schnellstart:</span>
+    <button onclick="preset(1,'')">🔥 Beste der letzten Stunde</button>
+    <button onclick="preset(24,'')">📅 Beste von heute</button>
+    <button onclick="preset(24,'de')">🇩🇪 Nur Deutsch, heute</button>
+    <button onclick="preset(168,'')">🏆 Beste der Woche</button>
+  </div>
   <div class="controls">
     <label>Spiel
       <input id="game" value="Grand Theft Auto VI" style="width:200px">
@@ -102,7 +150,7 @@ code{background:#000;padding:2px 6px;border-radius:4px}
       </select>
     </label>
     <label>Min. Views
-      <input id="minViews" type="number" value="50" min="0" oninput="render()">
+      <input id="minViews" type="number" value="20" min="0" oninput="render()" title="Clips mit weniger Aufrufen werden ausgeblendet">
     </label>
     <label>Max. pro Streamer
       <input id="perStreamer" type="number" value="3" min="0" oninput="render()" title="0 = unbegrenzt">
@@ -118,9 +166,75 @@ code{background:#000;padding:2px 6px;border-radius:4px}
 
 <div id="bar">
   <b id="selCount"></b>
-  <button onclick="copyYtdlp()">yt-dlp-Befehle kopieren</button>
+  <button onclick="copyYtdlp()">⬇ Download-Befehl kopieren</button>
   <button class="ghost" onclick="copyLinks()">Links kopieren</button>
+  <button class="ghost" onclick="openGuide('dl')">Wie lade ich runter?</button>
   <button class="ghost" onclick="clearSel()">Auswahl leeren</button>
+</div>
+
+<!-- Anleitung -->
+<div id="guide" onclick="if(event.target===this)closeGuide()">
+  <div class="gbox">
+    <button class="ghost close" onclick="closeGuide()">✕ Schliessen</button>
+    <h2>Anleitung</h2>
+    <p>Twitch-Zuschauer clippen ständig die lustigsten und krassesten Momente. Diese Seite sammelt diese Clips und sortiert sie nach Aufrufen. Was oben steht, ist meistens auch gut.</p>
+
+    <h3>1. Clips finden</h3>
+    <ol>
+      <li>Klick auf einen <b>Schnellstart-Knopf</b>, z.B. „🔥 Beste der letzten Stunde“.</li>
+      <li>Klick auf ein <b>Vorschaubild</b>, um den Clip direkt abzuspielen.</li>
+      <li>Gefällt er dir: <b>„Auswählen“</b>. Unten erscheint eine Leiste mit deiner Auswahl.</li>
+    </ol>
+
+    <h3>2. Die Filter (optional)</h3>
+    <ul>
+      <li><b>Zeitraum:</b> aus welcher Zeit die Clips sein sollen. Danach „Clips laden“ drücken.</li>
+      <li><b>Sprache:</b> z.B. nur deutsche Streamer.</li>
+      <li><b>Min. Views:</b> blendet unbeliebte Clips aus. Siehst du nichts, stell es auf 0.</li>
+      <li><b>Max. pro Streamer:</b> damit nicht alle Clips vom selben Streamer kommen. 0 = unbegrenzt.</li>
+      <li><b>Gesehene ausblenden:</b> versteckt Clips, die du schon angeschaut hast.</li>
+    </ul>
+
+    <h3 id="g-dl">3. Clips herunterladen</h3>
+    <p>Dafür brauchst du einmalig das Gratis-Programm <b>yt-dlp</b>.</p>
+    <div class="tabs">
+      <button id="t-mac" onclick="osTab('mac')">Mac</button>
+      <button id="t-win" class="off" onclick="osTab('win')">Windows</button>
+    </div>
+    <div id="os-mac">
+      <ol>
+        <li>Terminal öffnen: <b>Cmd + Leertaste</b>, „Terminal“ tippen, Enter.</li>
+        <li>Einmalig installieren (falls du Homebrew noch nicht hast: <a href="https://brew.sh" target="_blank" style="color:var(--acc)">brew.sh</a>):
+          <pre>brew install yt-dlp</pre></li>
+        <li>In den Ordner wechseln, wo die Clips hin sollen, z.B. Schreibtisch:
+          <pre>cd ~/Desktop</pre></li>
+      </ol>
+    </div>
+    <div id="os-win" hidden>
+      <ol>
+        <li>Startmenü → „Terminal“ oder „PowerShell“ öffnen.</li>
+        <li>Einmalig installieren:
+          <pre>winget install yt-dlp</pre></li>
+        <li>In den Ordner wechseln, wo die Clips hin sollen, z.B. Desktop:
+          <pre>cd ~\Desktop</pre></li>
+      </ol>
+    </div>
+    <p><b>Danach jedes Mal:</b> Clips auswählen → unten <b>„⬇ Download-Befehl kopieren“</b> → im Terminal einfügen (<b>Cmd + V</b> bzw. <b>Ctrl + V</b>) → Enter. Die Clips landen im Ordner <code>clips</code>, benannt als „Streamer – Titel“.</p>
+
+    <h3>4. Beim Posten</h3>
+    <ul>
+      <li>Nenn den <b>Streamer immer gut sichtbar</b> (im Video und in der Beschreibung). Der Name steht im Dateinamen.</li>
+      <li>Bearbeite die Clips etwas: Untertitel, eigener Titel, Zusammenschnitt. Das bringt mehr Reichweite.</li>
+      <li>Bei Streamern, die du oft nutzt: kurz um Erlaubnis fragen. So vermeidest du Copyright-Strikes.</li>
+    </ul>
+
+    <h3>Probleme?</h3>
+    <ul>
+      <li><b>Keine Clips sichtbar:</b> Min. Views auf 0 stellen oder einen längeren Zeitraum wählen.</li>
+      <li><b>„Login abgelaufen“:</b> einfach nochmal einloggen, das passiert nach ein paar Stunden.</li>
+      <li><b>Anderes Spiel:</b> oben bei „Spiel“ den Namen ändern, z.B. „Fortnite“, dann „Clips laden“.</li>
+    </ul>
+  </div>
 </div>
 
 <script>
@@ -250,6 +364,13 @@ function render() {
   const list = visibleClips();
   const streamers = new Set(list.map(c => c.broadcaster_id)).size;
   status(`${list.length} Clips von ${streamers} Streamern angezeigt (${clips.length} geladen). Klick aufs Bild zum Abspielen.`);
+  if (!list.length) {
+    $("grid").innerHTML = clips.length
+      ? `<div class="empty"><b>Deine Filter blenden alle ${clips.length} Clips aus.</b>Wahrscheinlich ist „Min. Views“ zu hoch oder die Sprache zu eng.<br><button onclick="looser()">Filter lockern</button></div>`
+      : `<div class="empty"><b>Keine Clips in diesem Zeitraum gefunden.</b>Versuch einen längeren Zeitraum oder prüf den Spielnamen.<br><button onclick="preset(168,'')">Beste der Woche laden</button></div>`;
+    updateBar();
+    return;
+  }
   $("grid").innerHTML = list.map(c => `
     <div class="card ${selected.has(c.id) ? "sel" : ""} ${seen.has(c.id) ? "seen" : ""}" id="c-${c.id}">
       <div class="thumb" onclick="play('${c.id}')">
@@ -286,6 +407,40 @@ function toggleSel(id) {
   render();
 }
 function clearSel() { selected.clear(); render(); }
+
+// Schnellstart: Zeitraum + Sprache setzen und laden
+function preset(hours, lang) {
+  $("hours").value = String(hours);
+  $("lang").value = lang;
+  $("minViews").value = hours <= 1 ? 5 : 20;
+  search();
+}
+function looser() {
+  $("minViews").value = 0;
+  $("lang").value = "";
+  $("filter").value = "";
+  $("hideSeen").checked = false;
+  render();
+}
+
+// Anleitung
+function openGuide(section) {
+  $("guide").classList.add("show");
+  document.body.style.overflow = "hidden";
+  if (section === "dl") setTimeout(() => $("g-dl").scrollIntoView({ behavior: "smooth" }), 50);
+}
+function closeGuide() {
+  $("guide").classList.remove("show");
+  document.body.style.overflow = "";
+}
+function osTab(os) {
+  $("os-mac").hidden = os !== "mac";
+  $("os-win").hidden = os !== "win";
+  $("t-mac").classList.toggle("off", os !== "mac");
+  $("t-win").classList.toggle("off", os !== "win");
+}
+osTab(/Win/i.test(navigator.platform || navigator.userAgent) ? "win" : "mac");
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeGuide(); });
 
 function updateBar() {
   $("bar").classList.toggle("show", selected.size > 0);
