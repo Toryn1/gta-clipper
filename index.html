@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GTA 6 Clip-Finder</title>
+<style>
+:root{--bg:#0e0e10;--card:#18181b;--line:#2a2a2e;--text:#efeff1;--muted:#adadb8;--acc:#ff4f9a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+h1{font-size:20px;margin:0}
+h1 span{color:var(--acc)}
+#who{color:var(--muted);font-size:13px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:14px 24px;border-bottom:1px solid var(--line)}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:4px}
+label.check{flex-direction:row;align-items:center;gap:6px;font-size:13px;color:var(--text);padding-bottom:8px}
+input,select{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+input[type=number]{width:90px}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+button:disabled{opacity:.5;cursor:default}
+#status{padding:10px 24px;color:var(--muted);font-size:13px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;padding:6px 24px 110px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.card.sel{outline:2px solid var(--acc)}
+.card.seen{opacity:.55}
+.thumb{position:relative;aspect-ratio:16/9;background:#000;cursor:pointer}
+.thumb img,.thumb iframe{width:100%;height:100%;object-fit:cover;border:0;display:block}
+.badge{position:absolute;bottom:6px;font-size:12px;background:rgba(0,0,0,.78);padding:2px 6px;border-radius:4px}
+.views{left:6px}.dur{right:6px}
+.play{position:absolute;inset:0;display:grid;place-items:center;font-size:40px;opacity:0;transition:.15s;background:rgba(0,0,0,.25)}
+.thumb:hover .play{opacity:1}
+.meta{padding:10px 12px;display:flex;flex-direction:column;gap:3px;flex:1}
+.title{font-weight:600}
+.sub{color:var(--muted);font-size:13px}
+.actions{display:flex;gap:6px;padding:0 12px 12px;flex-wrap:wrap}
+.actions button{padding:6px 10px;font-size:13px}
+#bar{position:fixed;bottom:0;left:0;right:0;background:#1f1f23;border-top:1px solid var(--line);padding:12px 24px;display:none;gap:10px;align-items:center;flex-wrap:wrap}
+#bar.show{display:flex}
+#bar b{margin-right:auto}
+.login{max-width:560px;margin:60px auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.login p{color:var(--muted)}
+.login input{width:100%;margin:6px 0 14px}
+.warn{color:#ffb347}
+code{background:#000;padding:2px 6px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GTA 6 <span>Clip-Finder</span></h1>
+  <div id="who"></div>
+</header>
+
+<!-- Login -->
+<div id="loginBox" class="login" hidden>
+  <h2 style="margin-top:0">Mit Twitch verbinden</h2>
+  <p id="loginMsg">Einmal einloggen, dann siehst du die meistgesehenen Clips. Der Login bleibt nur in diesem Tab, gespeichert wird nichts.</p>
+  <div id="cidWrap">
+    <label>Deine Twitch Client-ID (von dev.twitch.tv)
+      <input id="cid" placeholder="z.B. abc123xyz..." autocomplete="off">
+    </label>
+  </div>
+  <button onclick="login()">Mit Twitch einloggen</button>
+</div>
+
+<!-- App -->
+<div id="app" hidden>
+  <div class="controls">
+    <label>Spiel
+      <input id="game" value="Grand Theft Auto VI" style="width:200px">
+    </label>
+    <label>Zeitraum
+      <select id="hours">
+        <option value="1">letzte 1 Std.</option>
+        <option value="3">letzte 3 Std.</option>
+        <option value="6" selected>letzte 6 Std.</option>
+        <option value="24">letzte 24 Std.</option>
+        <option value="72">letzte 3 Tage</option>
+        <option value="168">letzte 7 Tage</option>
+      </select>
+    </label>
+    <label>Menge
+      <select id="pages">
+        <option value="1">Top 100</option>
+        <option value="3" selected>Top 300</option>
+        <option value="5">Top 500</option>
+      </select>
+    </label>
+    <button id="searchBtn" onclick="search()">Clips laden</button>
+    <span style="width:12px"></span>
+    <label>Sprache
+      <select id="lang" onchange="render()">
+        <option value="">alle</option>
+        <option value="de">Deutsch</option>
+        <option value="en">Englisch</option>
+        <option value="es">Spanisch</option>
+        <option value="fr">Französisch</option>
+        <option value="pt">Portugiesisch</option>
+        <option value="it">Italienisch</option>
+      </select>
+    </label>
+    <label>Min. Views
+      <input id="minViews" type="number" value="50" min="0" oninput="render()">
+    </label>
+    <label>Max. pro Streamer
+      <input id="perStreamer" type="number" value="3" min="0" oninput="render()" title="0 = unbegrenzt">
+    </label>
+    <label>Streamer suchen
+      <input id="filter" placeholder="Name..." oninput="render()" style="width:140px">
+    </label>
+    <label class="check"><input type="checkbox" id="hideSeen" onchange="render()"> Gesehene ausblenden</label>
+  </div>
+  <div id="status"></div>
+  <div id="grid"></div>
+</div>
+
+<div id="bar">
+  <b id="selCount"></b>
+  <button onclick="copyYtdlp()">yt-dlp-Befehle kopieren</button>
+  <button class="ghost" onclick="copyLinks()">Links kopieren</button>
+  <button class="ghost" onclick="clearSel()">Auswahl leeren</button>
+</div>
+
+<script>
+// Optional: Client-ID hier fest eintragen, dann musst du sie nicht jedes Mal eingeben.
+const CLIENT_ID = "p25ksqdjsh9napr9swapfaehfio7db";
+// Funktioniert lokal (http://localhost:3000) und online (z.B. https://name.github.io/gta-clipper/)
+const REDIRECT  = location.pathname === "/" ? location.origin : location.origin + location.pathname.replace(/index\.html$/, "");
+
+let token = null, clientId = null, clips = [];
+const selected = new Set(), seen = new Set();
+const $ = id => document.getElementById(id);
+
+// Token aus der URL nach dem Twitch-Login holen und sofort aus der Adresszeile entfernen
+const hash = new URLSearchParams(location.hash.slice(1));
+if (hash.get("access_token")) {
+  token = hash.get("access_token");
+  history.replaceState(null, "", location.pathname);
+}
+
+function showLogin(msg) {
+  $("app").hidden = true;
+  $("loginBox").hidden = false;
+  $("cidWrap").hidden = !!CLIENT_ID;
+  if (msg) $("loginMsg").innerHTML = msg;
+  if (location.protocol === "file:") {
+    $("loginMsg").innerHTML = '<span class="warn">Bitte die Seite über <code>http://localhost:3000</code> ' +
+      'oder deine GitHub-Adresse öffnen, nicht direkt als Datei.</span>';
+  }
+}
+
+function login() {
+  const id = CLIENT_ID || $("cid").value.trim();
+  if (!id) { $("loginMsg").innerHTML = '<span class="warn">Bitte zuerst die Client-ID eintragen.</span>'; return; }
+  const u = new URL("https://id.twitch.tv/oauth2/authorize");
+  u.search = new URLSearchParams({ client_id: id, redirect_uri: REDIRECT, response_type: "token", scope: "" });
+  location.href = u.toString();
+}
+
+async function init() {
+  if (!token) return showLogin();
+  const r = await fetch("https://id.twitch.tv/oauth2/validate", { headers: { Authorization: "OAuth " + token } });
+  if (!r.ok) { token = null; return showLogin("Login abgelaufen, bitte nochmal einloggen."); }
+  const v = await r.json();
+  clientId = v.client_id;
+  $("who").textContent = "Eingeloggt als " + v.login;
+  $("loginBox").hidden = true;
+  $("app").hidden = false;
+  search();
+}
+
+async function api(path, params = {}) {
+  const u = new URL("https://api.twitch.tv/helix/" + path);
+  for (const [k, v] of Object.entries(params)) u.searchParams.append(k, v);
+  const r = await fetch(u, { headers: { "Client-Id": clientId, Authorization: "Bearer " + token } });
+  if (r.status === 401) { token = null; showLogin("Login abgelaufen, bitte nochmal einloggen."); throw new Error("401"); }
+  if (!r.ok) throw new Error(path + " → " + r.status + " " + (await r.text()));
+  return r.json();
+}
+
+async function findGame(name) {
+  let d = await api("games", { name });
+  if (d.data.length) return d.data[0];
+  d = await api("search/categories", { query: name, first: 5 });
+  return d.data[0] || null;
+}
+
+async function search() {
+  const btn = $("searchBtn");
+  btn.disabled = true;
+  try {
+    status("Suche Spiel...");
+    const game = await findGame($("game").value.trim());
+    if (!game) { status("Spiel nicht gefunden. Schreibweise prüfen."); return; }
+    const hours = +$("hours").value, pages = +$("pages").value;
+    const started_at = new Date(Date.now() - hours * 3600e3).toISOString();
+    const ended_at = new Date().toISOString();
+    let all = [], cursor = null;
+    for (let i = 0; i < pages; i++) {
+      const p = { game_id: game.id, started_at, ended_at, first: 100 };
+      if (cursor) p.after = cursor;
+      const d = await api("clips", p);
+      all.push(...d.data);
+      status(`${all.length} Clips geladen (${game.name})...`);
+      cursor = d.pagination && d.pagination.cursor;
+      if (!cursor) break;
+    }
+    // doppelte entfernen
+    const ids = new Set();
+    clips = all.filter(c => !ids.has(c.id) && ids.add(c.id));
+    render();
+  } catch (e) {
+    if (e.message !== "401") status("Fehler: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function status(t) { $("status").textContent = t; }
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function ago(iso) {
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 60) return "vor " + m + " Min.";
+  const h = Math.round(m / 60);
+  return h < 48 ? "vor " + h + " Std." : "vor " + Math.round(h / 24) + " Tagen";
+}
+
+function visibleClips() {
+  const lang = $("lang").value, min = +$("minViews").value || 0;
+  const per = +$("perStreamer").value || 0, f = $("filter").value.trim().toLowerCase();
+  const hide = $("hideSeen").checked, count = {};
+  return clips.filter(c => {
+    if (lang && !(c.language || "").startsWith(lang)) return false;
+    if (c.view_count < min) return false;
+    if (f && !c.broadcaster_name.toLowerCase().includes(f)) return false;
+    if (hide && seen.has(c.id)) return false;
+    if (per) {
+      count[c.broadcaster_id] = (count[c.broadcaster_id] || 0) + 1;
+      if (count[c.broadcaster_id] > per) return false;
+    }
+    return true;
+  });
+}
+
+function render() {
+  const list = visibleClips();
+  const streamers = new Set(list.map(c => c.broadcaster_id)).size;
+  status(`${list.length} Clips von ${streamers} Streamern angezeigt (${clips.length} geladen). Klick aufs Bild zum Abspielen.`);
+  $("grid").innerHTML = list.map(c => `
+    <div class="card ${selected.has(c.id) ? "sel" : ""} ${seen.has(c.id) ? "seen" : ""}" id="c-${c.id}">
+      <div class="thumb" onclick="play('${c.id}')">
+        <img src="${esc(c.thumbnail_url)}" loading="lazy" alt="">
+        <div class="play">▶</div>
+        <span class="badge views">${c.view_count.toLocaleString("de-CH")} Views</span>
+        <span class="badge dur">${Math.round(c.duration)}s</span>
+      </div>
+      <div class="meta">
+        <div class="title">${esc(c.title)}</div>
+        <div class="sub"><b>${esc(c.broadcaster_name)}</b> · ${ago(c.created_at)} · ${esc((c.language || "").toUpperCase())}</div>
+        <div class="sub">geclippt von ${esc(c.creator_name)}</div>
+      </div>
+      <div class="actions">
+        <button onclick="toggleSel('${c.id}')">${selected.has(c.id) ? "Ausgewählt ✓" : "Auswählen"}</button>
+        <button class="ghost" onclick="copy('${esc(c.url)}','${c.id}')">Link kopieren</button>
+        <button class="ghost" onclick="window.open('${esc(c.url)}','_blank')">Twitch</button>
+      </div>
+    </div>`).join("");
+  updateBar();
+}
+
+function play(id) {
+  seen.add(id);
+  const card = $("c-" + id);
+  card.classList.add("seen");
+  card.querySelector(".thumb").outerHTML =
+    `<div class="thumb"><iframe src="https://clips.twitch.tv/embed?clip=${encodeURIComponent(id)}&parent=${location.hostname}&autoplay=true" allowfullscreen></iframe></div>`;
+}
+
+function toggleSel(id) {
+  selected.has(id) ? selected.delete(id) : selected.add(id);
+  seen.add(id);
+  render();
+}
+function clearSel() { selected.clear(); render(); }
+
+function updateBar() {
+  $("bar").classList.toggle("show", selected.size > 0);
+  $("selCount").textContent = selected.size + " Clip(s) ausgewählt";
+}
+
+async function copy(text, id) {
+  await navigator.clipboard.writeText(text);
+  if (id) seen.add(id);
+  status("Kopiert!");
+}
+
+// Dateiname: "Streamer - Titel" (gut fürs Credit beim Posten)
+const safe = s => s.replace(/[\\/:*?"<>|%$`!]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+
+function selectedClips() { return clips.filter(c => selected.has(c.id)); }
+
+function copyYtdlp() {
+  const lines = selectedClips().map(c =>
+    `yt-dlp -o "clips/${safe(c.broadcaster_name)} - ${safe(c.title)} [${c.id}].%(ext)s" "${c.url}"`);
+  copy(lines.join("\n"));
+  status(`${lines.length} Download-Befehle kopiert. Im Terminal einfügen und Enter drücken.`);
+}
+function copyLinks() {
+  copy(selectedClips().map(c => `${c.url}  (${c.broadcaster_name})`).join("\n"));
+}
+
+init();
+</script>
+</body>
+</html>
