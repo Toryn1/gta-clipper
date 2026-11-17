@@ -306,6 +306,34 @@ class Detector:
 
 # ------------------------------------------------------------------ Main ---
 
+YTDLP = "yt-dlp"
+
+
+def ensure_ytdlp():
+    """Findet yt-dlp oder lädt die offizielle Einzeldatei automatisch in den Unterordner 'bin'."""
+    found = shutil.which("yt-dlp")
+    if found:
+        return found
+    here = os.path.dirname(os.path.abspath(__file__))
+    name = {"darwin": "yt-dlp_macos", "win32": "yt-dlp.exe"}.get(sys.platform, "yt-dlp")
+    local = os.path.join(here, "bin", "yt-dlp.exe" if sys.platform == "win32" else "yt-dlp")
+    if os.path.exists(local):
+        return local
+    url = f"https://github.com/yt-dlp/yt-dlp/releases/latest/download/{name}"
+    log("yt-dlp fehlt - lade es einmalig herunter (ca. 35 MB, offizielle Version von GitHub)...")
+    try:
+        os.makedirs(os.path.dirname(local), exist_ok=True)
+        tmp = local + ".part"
+        urllib.request.urlretrieve(url, tmp)
+        os.replace(tmp, local)
+        os.chmod(local, 0o755)
+        log(f"yt-dlp bereit: {local}")
+        return local
+    except Exception as e:
+        log(f"yt-dlp konnte nicht geladen werden ({e}). Clips werden nur als Link angezeigt.")
+        return None
+
+
 def notify(title, text):
     """Mac-Benachrichtigung oben rechts (macOS), sonst nichts."""
     if sys.platform != "darwin":
@@ -322,7 +350,7 @@ def download(url, channel, outdir):
     os.makedirs(folder, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d %H-%M")
     tmpl = os.path.join(folder, f"{stamp} - %(title).80s [%(id)s].%(ext)s")
-    r = subprocess.run(["yt-dlp", "-q", "--no-warnings", "--print", "after_move:filepath", "-o", tmpl, url],
+    r = subprocess.run([YTDLP, "-q", "--no-warnings", "--print", "after_move:filepath", "-o", tmpl, url],
                        capture_output=True, text=True)
     if r.returncode == 0:
         path = (r.stdout.strip().splitlines() or [folder])[-1]
@@ -353,9 +381,9 @@ def main():
     if not a.client_id:
         a.client_id = input("Twitch Client-ID: ").strip()
     if a.download:
-        if not shutil.which("yt-dlp"):
-            log("HINWEIS: yt-dlp ist nicht installiert, Clips werden NICHT heruntergeladen (nur Links).")
-            log("         Installieren mit:  brew install yt-dlp   (danach Bot neu starten)")
+        global YTDLP
+        YTDLP = ensure_ytdlp()
+        if not YTDLP:
             a.download = False
         else:
             os.makedirs(a.out, exist_ok=True)
