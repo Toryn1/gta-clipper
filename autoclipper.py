@@ -344,6 +344,25 @@ def notify(title, text):
                    capture_output=True)
 
 
+def make_stacked(path, channel):
+    """Schneidet den Clip automatisch mit eigenem Gameplay zusammen (stacker.py), falls vorhanden."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import stacker
+    except ImportError:
+        return
+    if not stacker.gameplay_files():
+        return
+    with STACK_LOCK:  # nacheinander schneiden, damit der Mac nicht überlastet
+        out = stacker.make_for_clip(path, channel)
+    if out:
+        log(f"  fertig zum Posten: {out}")
+        notify("Video fertig zum Posten", f"{channel}: {os.path.basename(out)}")
+
+
+STACK_LOCK = threading.Lock()
+
+
 def download(url, channel, outdir):
     time.sleep(20)  # Twitch braucht ein paar Sekunden, bis der Clip fertig ist
     folder = os.path.join(outdir, channel)          # eigener Ordner pro Streamer
@@ -356,6 +375,7 @@ def download(url, channel, outdir):
         path = (r.stdout.strip().splitlines() or [folder])[-1]
         log(f"  gespeichert: {path}")
         notify("Neuer Clip gespeichert", f"{channel}: {os.path.basename(path)}")
+        make_stacked(path, channel)
     else:
         log(f"  Download fehlgeschlagen für {url}: {r.stderr.strip()[:200]}")
         notify("Clip-Download fehlgeschlagen", f"{channel} - Link steht im Terminal")
