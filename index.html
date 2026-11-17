@@ -219,7 +219,7 @@ code{background:#000;padding:2px 6px;border-radius:4px}
           <pre>cd ~\Desktop</pre></li>
       </ol>
     </div>
-    <p><b>Danach jedes Mal:</b> Clips auswählen → unten <b>„⬇ Download-Befehl kopieren“</b> → im Terminal einfügen (<b>Cmd + V</b> bzw. <b>Ctrl + V</b>) → Enter. Die Clips landen im Ordner <code>clips</code>, benannt als „Streamer – Titel“.</p>
+    <p><b>Danach jedes Mal:</b> Clips auswählen → unten <b>„⬇ Download-Befehl kopieren“</b> → im Terminal einfügen (<b>Cmd + V</b> bzw. <b>Ctrl + V</b>) → Enter. Die Clips landen im Ordner <code>clips</code>, mit einem eigenen Unterordner pro Streamer.</p>
 
     <h3>4. Beim Posten</h3>
     <ul>
@@ -460,7 +460,7 @@ function selectedClips() { return clips.filter(c => selected.has(c.id)); }
 
 function copyYtdlp() {
   const lines = selectedClips().map(c =>
-    `yt-dlp -o "clips/${safe(c.broadcaster_name)} - ${safe(c.title)} [${c.id}].%(ext)s" "${c.url}"`);
+    `yt-dlp -o "clips/${safe(c.broadcaster_name)}/${safe(c.title)} [${c.id}].%(ext)s" "${c.url}"`);
   copy(lines.join("\n"));
   status(`${lines.length} Download-Befehle kopiert. Im Terminal einfügen und Enter drücken.`);
 }
