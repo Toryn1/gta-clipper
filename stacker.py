@@ -3,7 +3,7 @@
 Clip-Zusammenschnitt fürs Hochformat (TikTok / Shorts / Reels)
 --------------------------------------------------------------
 Oben: der Streamer-Clip   |   Unten: dein eigenes Gameplay
-Ergebnis: 1080x1920 (9:16), Ton vom Streamer-Clip, Credit "twitch.tv/<streamer>" in der Mitte.
+Ergebnis: 1080x1920 (9:16), ganzes Clip-Bild mit Blur-Hintergrund, Ton vom Streamer-Clip, Credit "twitch.tv/<streamer>" in der Mitte.
 
   python3 stacker.py                  # schneidet alle neuen Clips aus clips/<streamer>/ zusammen
   python3 stacker.py --alle-neu       # macht auch schon geschnittene nochmal
@@ -121,7 +121,12 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
     else:
         gp_input = ["-stream_loop", "-1", "-i", gp]  # Gameplay zu kurz -> wiederholen
 
-    base = (f"[0:v]scale={W}:{HALF}:force_original_aspect_ratio=increase,crop={W}:{HALF},setsar=1,fps=30[top];"
+    # Oben: ganzes Clip-Bild (nichts abgeschnitten), Lücken mit unscharfer Version gefüllt (Layout B)
+    base = (f"[0:v]split[c1][c2];"
+            f"[c1]scale={W}:{HALF}:force_original_aspect_ratio=increase,crop={W}:{HALF},"
+            f"boxblur=20:2,eq=brightness=-0.15,setsar=1[bg];"
+            f"[c2]scale={W}:{HALF}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=30[top];"
             f"[1:v]scale={W}:{HALF}:force_original_aspect_ratio=increase,crop={W}:{HALF},setsar=1,fps=30[bot];"
             f"[top][bot]vstack=inputs=2,format=yuv420p")
     font = next((f for f in FONTS if os.path.exists(f)), None)
@@ -137,8 +142,8 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
     for fg in filters:
         cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path, *gp_input,
                "-filter_complex", fg, "-map", "[v]", "-map", "0:a?",
-               "-t", f"{d:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-               "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp]
+               "-t", f"{d:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+               "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0:
             os.replace(tmp, out_path)
