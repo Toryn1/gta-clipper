@@ -306,14 +306,31 @@ class Detector:
 
 # ------------------------------------------------------------------ Main ---
 
+def notify(title, text):
+    """Mac-Benachrichtigung oben rechts (macOS), sonst nichts."""
+    if sys.platform != "darwin":
+        return
+    esc = lambda x: x.replace("\\", "").replace('"', "'")
+    subprocess.run(["osascript", "-e",
+                    f'display notification "{esc(text)}" with title "{esc(title)}" sound name "Glass"'],
+                   capture_output=True)
+
+
 def download(url, channel, outdir):
     time.sleep(20)  # Twitch braucht ein paar Sekunden, bis der Clip fertig ist
-    tmpl = os.path.join(outdir, f"{channel} - %(title)s [%(id)s].%(ext)s")
-    r = subprocess.run(["yt-dlp", "-q", "--no-warnings", "-o", tmpl, url], capture_output=True, text=True)
+    folder = os.path.join(outdir, channel)          # eigener Ordner pro Streamer
+    os.makedirs(folder, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d %H-%M")
+    tmpl = os.path.join(folder, f"{stamp} - %(title).80s [%(id)s].%(ext)s")
+    r = subprocess.run(["yt-dlp", "-q", "--no-warnings", "--print", "after_move:filepath", "-o", tmpl, url],
+                       capture_output=True, text=True)
     if r.returncode == 0:
-        log(f"  heruntergeladen: {channel} ({url})")
+        path = (r.stdout.strip().splitlines() or [folder])[-1]
+        log(f"  gespeichert: {path}")
+        notify("Neuer Clip gespeichert", f"{channel}: {os.path.basename(path)}")
     else:
         log(f"  Download fehlgeschlagen für {url}: {r.stderr.strip()[:200]}")
+        notify("Clip-Download fehlgeschlagen", f"{channel} - Link steht im Terminal")
 
 
 def main():
@@ -337,8 +354,12 @@ def main():
         a.client_id = input("Twitch Client-ID: ").strip()
     if a.download:
         if not shutil.which("yt-dlp"):
-            sys.exit("--download braucht yt-dlp (https://github.com/yt-dlp/yt-dlp). Installieren oder ohne --download starten.")
-        os.makedirs(a.out, exist_ok=True)
+            log("HINWEIS: yt-dlp ist nicht installiert, Clips werden NICHT heruntergeladen (nur Links).")
+            log("         Installieren mit:  brew install yt-dlp   (danach Bot neu starten)")
+            a.download = False
+        else:
+            os.makedirs(a.out, exist_ok=True)
+            log(f"Clips werden automatisch gespeichert in: {os.path.abspath(a.out)}")
 
     tw = Twitch(a.client_id)
     game_id, game_name = tw.game_id(a.game)
@@ -395,6 +416,7 @@ def main():
                         continue
                     if a.dry_run:
                         log(f"*** WÜRDE CLIPPEN: {ch} | {reason}")
+                        notify("Testmodus: würde clippen", f"{ch} | {reason}")
                         made += 1
                         continue
                     s, data = tw.create_clip(targets[ch]["id"])
@@ -405,6 +427,8 @@ def main():
                         log(f"*** CLIP #{made}: {ch} | {reason}\n    {url}")
                         if a.download:
                             threading.Thread(target=download, args=(url, ch, a.out), daemon=True).start()
+                        else:
+                            notify("Neuer Clip erstellt", f"{ch} - Link steht im Terminal")
                     elif s == 403:
                         log(f"Clip bei {ch} nicht erlaubt (Streamer hat Clips eingeschränkt, z.B. nur für Follower/Subs).")
                     elif s == 404:
