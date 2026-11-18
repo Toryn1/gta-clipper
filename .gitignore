@@ -1,0 +1,9 @@
+client_secret*.json
+youtube_token.json
+bin/
+clips/
+fertig/
+gameplay/
+youtube_lang/
+__pycache__/
+.DS_Store
