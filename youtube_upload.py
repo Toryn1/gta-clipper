@@ -8,6 +8,14 @@ und stellst sie mit einem Klick auf "Öffentlich".
   Shorts:        alles aus  fertig/<streamer>/   (die zusammengeschnittenen Clips)
   Lange Videos:  alles aus  youtube_lang/         (dein eigenes Gameplay)
 
+Regeln (oben im Code einstellbar): max. 3 Shorts + 1 langes Video pro Tag, max. 1 Short pro
+Streamer und Tag, neueste zuerst. Schreib "SKIP" in die erste Zeile der .txt, um ein Video
+auszulassen.
+
+  python3 youtube_upload.py            # nach Regeln, privat, mit empfohlenen Zeiten
+  python3 youtube_upload.py --planen   # zusätzlich automatisch zu den Zeiten veröffentlichen
+  python3 youtube_upload.py --alle     # Regeln ignorieren (alles hochladen)
+
 Titel/Beschreibung: Liegt neben einem Video eine gleichnamige .txt-Datei, wird sie benutzt:
     TITEL: Mein Titel
     TAGS: gta6, gta, gaming
@@ -47,6 +55,15 @@ VIDEO_EXT = (".mp4", ".mov", ".m4v", ".mkv", ".webm")
 SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 PORT = 8765
 REDIRECT = f"http://127.0.0.1:{PORT}"
+
+# ======================= UPLOAD-REGELN (hier anpassen) =======================
+MAX_SHORTS_PRO_TAG = 3        # so viele Shorts lädt der Uploader pro Tag höchstens hoch
+MAX_LANG_PRO_TAG = 1          # lange Videos pro Tag
+MAX_PRO_STREAMER_PRO_TAG = 1  # Abwechslung: max. 1 Short pro Streamer und Tag
+POST_ZEITEN = ["12:00", "16:00", "19:00", "22:00"]  # empfohlene Veröffentlichungszeiten
+NEUESTE_ZUERST = True         # frische Clips zuerst (wichtig in der Release-Woche)
+TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+# ============================================================================
 
 DEFAULT_TAGS_SHORT = ["gta6", "gta 6", "gtavi", "grand theft auto 6", "twitch", "shorts", "gaming", "clips"]
 DEFAULT_TAGS_LONG = ["gta6", "gta 6", "gameplay", "gaming", "no commentary"]
@@ -172,8 +189,15 @@ def read_meta(video, kind):
     streamer = os.path.basename(os.path.dirname(video)) if kind == "short" else ""
     name = os.path.basename(base)
     clean_name = re.sub(r"\s*\[[^\]]*\]$", "", re.sub(r"^\d{4}-\d{2}-\d{2} \d{2}-\d{2} - ", "", name)).strip()
+    if kind == "short" and not os.path.exists(txt):
+        try:
+            sys.path.insert(0, HERE)
+            import captions
+            captions.write_caption_file(video, streamer)
+        except Exception:
+            pass
     if kind == "short":
-        title = f"{streamer} bei GTA 6 😂 #shorts #gta6"
+        title = f"{streamer} bei GTA 6 #shorts"
         desc = (f"🎥 Credit: https://twitch.tv/{streamer}\n"
                 f"Folgt {streamer} auf Twitch für mehr!\n\n#gta6 #gta #shorts #twitch #{streamer}")
         tags = DEFAULT_TAGS_SHORT + [streamer]
@@ -198,10 +222,13 @@ def read_meta(video, kind):
     return title, desc, tags[:30]
 
 
-def upload(token, path, title, desc, tags):
+def upload(token, path, title, desc, tags, publish_at=None):
     size = os.path.getsize(path)
+    status = {"privacyStatus": "private", "selfDeclaredMadeForKids": False}
+    if publish_at:
+        status["publishAt"] = publish_at  # YouTube veröffentlicht dann automatisch zu dieser Zeit
     meta = {"snippet": {"title": title, "description": desc, "tags": tags, "categoryId": "20"},
-            "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": False}}
+            "status": status}
     init = urllib.request.Request(
         "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
         data=json.dumps(meta).encode(), method="POST",
@@ -230,27 +257,100 @@ def find_videos():
     return [(p, k) for p, k in todo if not os.path.exists(os.path.splitext(p)[0] + ".youtube.txt")]
 
 
+def is_skip(path):
+    txt = os.path.splitext(path)[0] + ".txt"
+    if os.path.exists(txt):
+        with open(txt, encoding="utf-8") as f:
+            return f.readline().strip().upper().startswith("SKIP")
+    return False
+
+
+def uploaded_today():
+    """Zählt heutige Uploads anhand der .youtube.txt-Marker."""
+    today = datetime.now().date()
+    shorts, longs, streamers = 0, 0, set()
+    for root, _, files in os.walk(HERE):
+        for f in files:
+            if f.endswith(".youtube.txt"):
+                p = os.path.join(root, f)
+                if datetime.fromtimestamp(os.path.getmtime(p)).date() == today:
+                    if os.path.abspath(root).startswith(os.path.abspath(LONG_DIR)):
+                        longs += 1
+                    else:
+                        shorts += 1
+                        streamers.add(os.path.basename(root))
+    return shorts, longs, streamers
+
+
+def apply_rules(todo, ignore_limits=False):
+    todo = [(p, k) for p, k in todo if not is_skip(p)]
+    todo.sort(key=lambda x: os.path.getmtime(x[0]), reverse=NEUESTE_ZUERST)
+    if ignore_limits:
+        return todo
+    s_done, l_done, used = uploaded_today()
+    per = {}
+    for st in used:
+        per[st] = per.get(st, 0) + 1
+    picked, s_left, l_left = [], MAX_SHORTS_PRO_TAG - s_done, MAX_LANG_PRO_TAG - l_done
+    for p, k in todo:
+        if k == "short":
+            st = os.path.basename(os.path.dirname(p))
+            if s_left <= 0 or per.get(st, 0) >= MAX_PRO_STREAMER_PRO_TAG:
+                continue
+            per[st] = per.get(st, 0) + 1
+            s_left -= 1
+        else:
+            if l_left <= 0:
+                continue
+            l_left -= 1
+        picked.append((p, k))
+    log(f"Regeln: heute schon {s_done}/{MAX_SHORTS_PRO_TAG} Shorts und {l_done}/{MAX_LANG_PRO_TAG} lange Videos.")
+    return picked
+
+
+def next_slots(n):
+    """Nächste freie Posting-Zeiten ab jetzt (heute, sonst morgen)."""
+    from datetime import timedelta
+    now = datetime.now()
+    slots, day = [], 0
+    while len(slots) < n and day < 7:
+        for t in POST_ZEITEN:
+            hh, mm = map(int, t.split(":"))
+            dt = (now + timedelta(days=day)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if dt > now + timedelta(minutes=20):
+                slots.append(dt)
+                if len(slots) == n:
+                    break
+        day += 1
+    return slots
+
+
 def main():
     os.chdir(HERE)
-    todo = find_videos()
+    planen = "--planen" in sys.argv
+    todo = apply_rules(find_videos(), ignore_limits="--alle" in sys.argv)
     if not todo:
-        log("Nichts Neues zum Hochladen (fertig/ und youtube_lang/ sind schon erledigt).")
+        log("Heute nichts mehr hochzuladen: Tageslimit erreicht oder keine neuen Videos. Morgen geht es weiter.")
         return
     shorts = sum(1 for _, k in todo if k == "short")
     log(f"{len(todo)} Video(s) bereit: {shorts} Shorts, {len(todo) - shorts} lange Videos")
     token = get_access_token()
     ok = 0
+    slots = next_slots(len(todo))
+    plan = []
     for i, (path, kind) in enumerate(todo, 1):
         title, desc, tags = read_meta(path, kind)
+        slot = slots[i - 1] if i - 1 < len(slots) else None
+        publish_at = slot.astimezone().isoformat() if (planen and slot) else None
         log(f"[{i}/{len(todo)}] {'Short' if kind == 'short' else 'Langes Video'}: {title}")
         try:
-            vid = upload(token, path, title, desc, tags)
+            vid = upload(token, path, title, desc, tags, publish_at)
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="replace")
             if e.code == 401:
                 token = get_access_token()
                 try:
-                    vid = upload(token, path, title, desc, tags)
+                    vid = upload(token, path, title, desc, tags, publish_at)
                 except Exception as e2:
                     log(f"  Fehler: {e2}")
                     continue
@@ -266,10 +366,19 @@ def main():
         link = f"https://studio.youtube.com/video/{vid}/edit"
         with open(os.path.splitext(path)[0] + ".youtube.txt", "w", encoding="utf-8") as f:
             f.write(f"https://youtu.be/{vid}\n{link}\n")
+            if slot:
+                f.write(f"{'geplant' if planen else 'empfohlen'}: {slot:%d.%m. %H:%M}\n")
         log(f"  hochgeladen (privat): {link}")
+        if slot:
+            plan.append(f"{TAGE[slot.weekday()]} {slot:%H:%M}  {title}")
         ok += 1
-    log(f"Fertig: {ok} Video(s) als PRIVAT hochgeladen. Prüfen & veröffentlichen in YouTube Studio:")
-    log("  https://studio.youtube.com  ->  Inhalte  ->  Sichtbarkeit auf 'Öffentlich'")
+    if planen:
+        log(f"Fertig: {ok} Video(s) hochgeladen und GEPLANT. YouTube veröffentlicht sie automatisch:")
+    else:
+        log(f"Fertig: {ok} Video(s) als PRIVAT hochgeladen. Prüfen & veröffentlichen in YouTube Studio")
+        log("  (https://studio.youtube.com -> Inhalte -> Sichtbarkeit 'Öffentlich'), am besten zu diesen Zeiten:")
+    for line in plan:
+        log(f"  {line}")
     if ok:
         notify("YouTube-Upload fertig", f"{ok} Video(s) privat hochgeladen - jetzt in YouTube Studio prüfen")
 

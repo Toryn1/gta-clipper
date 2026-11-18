@@ -147,6 +147,12 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0:
             os.replace(tmp, out_path)
+            try:
+                sys.path.insert(0, HERE)
+                import captions
+                captions.write_caption_file(out_path, streamer)
+            except Exception as e:
+                log(f"(Caption konnte nicht erstellt werden: {e})")
             return out_path
         last_err = r.stderr.strip()[-300:]
     if os.path.exists(tmp):
