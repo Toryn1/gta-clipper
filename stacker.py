@@ -142,7 +142,7 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
     for fg in filters:
         cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path, *gp_input,
                "-filter_complex", fg, "-map", "[v]", "-map", "0:a?",
-               "-t", f"{d:.2f}", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+               "-t", f"{d:.2f}", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0:

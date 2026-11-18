@@ -167,20 +167,30 @@ class Twitch:
             return d["data"][0]["id"], d["data"][0]["name"]
         sys.exit(f"Spiel '{name}' nicht gefunden.")
 
-    def top_streams(self, game_id, n, lang=None, exclude=()):
-        params = {"game_id": game_id, "first": 100, "type": "live"}
-        if lang:
-            params["language"] = lang
-        s, d = self.req("GET", "streams", params)
-        if s != 200:
-            log(f"Konnte Streams nicht laden ({s}): {d.get('message', '')}")
-            return {}
-        out = {}
-        for st in d.get("data", []):
-            if st["user_login"].lower() in exclude:
-                continue
-            out[st["user_login"].lower()] = {"id": st["user_id"], "viewers": st["viewer_count"]}
-            if len(out) >= n:
+    def top_streams(self, game_id, n, lang=None, exclude=(), min_viewers=0):
+        """Holt die grössten Live-Streams (mehrere Seiten à 100), sortiert nach Zuschauern."""
+        out, cursor = {}, None
+        while len(out) < n:
+            params = {"game_id": game_id, "first": 100, "type": "live"}
+            if lang:
+                params["language"] = lang
+            if cursor:
+                params["after"] = cursor
+            s, d = self.req("GET", "streams", params)
+            if s != 200:
+                log(f"Konnte Streams nicht laden ({s}): {d.get('message', '')}")
+                break
+            data = d.get("data", [])
+            for st in data:
+                if st["viewer_count"] < min_viewers:
+                    return out  # Liste ist absteigend sortiert -> Rest ist kleiner
+                if st["user_login"].lower() in exclude:
+                    continue
+                out[st["user_login"].lower()] = {"id": st["user_id"], "viewers": st["viewer_count"]}
+                if len(out) >= n:
+                    break
+            cursor = (d.get("pagination") or {}).get("cursor")
+            if not cursor or not data:
                 break
         return out
 
@@ -219,7 +229,7 @@ class Chat:
                 self.buf = ""
                 for ch in list(self.channels):
                     self._send(f"JOIN #{ch}")
-                    time.sleep(0.6)
+                    time.sleep(0.55)
                 return
             except OSError as e:
                 log(f"Chat-Verbindung fehlgeschlagen ({e}), neuer Versuch in 10s...")
@@ -229,7 +239,7 @@ class Chat:
         if ch not in self.channels:
             self.channels.add(ch)
             self._send(f"JOIN #{ch}")
-            time.sleep(0.6)  # Twitch-Limit für Joins
+            time.sleep(0.55)  # Twitch-Limit für Joins
 
     def part(self, ch):
         if ch in self.channels:
@@ -385,7 +395,10 @@ def main():
     ap = argparse.ArgumentParser(description="GTA 6 Auto-Clipper")
     ap.add_argument("--client-id", default=os.environ.get("TWITCH_CLIENT_ID", CLIENT_ID))
     ap.add_argument("--game", default=GAME_NAME)
-    ap.add_argument("--top", type=int, default=10, help="Anzahl grösste Streams (Standard 10, max. ~20)")
+    ap.add_argument("--top", type=int, default=10, help="Anzahl grösste Streams (Standard 10, max. 200)")
+    ap.add_argument("--min-viewers", type=int, default=0, help="Nur Streams mit mindestens so vielen Zuschauern")
+    ap.add_argument("--max-clips-min", type=int, default=12, help="Höchstens so viele Clips pro Minute (alle Kanäle)")
+    ap.add_argument("--refresh", type=int, default=300, help="Sekunden bis zur nächsten Stream-Aktualisierung")
     ap.add_argument("--lang", default=None, help="Sprache der Streams, z.B. de oder en")
     ap.add_argument("--channels", default=None, help="Feste Kanäle, kommagetrennt (statt --top)")
     ap.add_argument("--exclude", default="", help="Kanäle, die ignoriert werden sollen, kommagetrennt")
@@ -417,7 +430,7 @@ def main():
     def pick_channels():
         if a.channels:
             return tw.users([c.strip().lower() for c in a.channels.split(",") if c.strip()])
-        return tw.top_streams(game_id, min(a.top, 20), a.lang, exclude)
+        return tw.top_streams(game_id, min(a.top, 200), a.lang, exclude, a.min_viewers)
 
     chat = Chat()
     targets, dets = {}, {}
@@ -446,6 +459,7 @@ def main():
         log("TESTMODUS: Es werden keine echten Clips erstellt.")
 
     made, last_tick, last_status = 0, 0.0, time.time()
+    clip_times, pause_until = deque(), 0.0
     last_refresh = time.time()
     msgs = 0
     try:
@@ -467,6 +481,12 @@ def main():
                         notify("Testmodus: würde clippen", f"{ch} | {reason}")
                         made += 1
                         continue
+                    while clip_times and clip_times[0] < now - 60:
+                        clip_times.popleft()
+                    if now < pause_until or len(clip_times) >= a.max_clips_min:
+                        log(f"(übersprungen: {ch} - Clip-Limit pro Minute erreicht)")
+                        continue
+                    clip_times.append(now)
                     s, data = tw.create_clip(targets[ch]["id"])
                     if s == 202 and data.get("data"):
                         cid = data["data"][0]["id"]
@@ -482,13 +502,14 @@ def main():
                     elif s == 404:
                         log(f"{ch} ist offline.")
                     elif s == 429:
-                        log("Zu viele Clips in kurzer Zeit (Twitch-Limit). Kurz Pause...")
+                        pause_until = now + 60
+                        log("Twitch-Limit erreicht - 60 Sekunden Clip-Pause, dann geht es weiter.")
                     else:
                         log(f"Clip bei {ch} fehlgeschlagen ({s}): {data.get('message', '')}")
             if now - last_status >= 60:
                 log(f"Status: {len(dets)} Kanäle, {msgs} Chat-Nachrichten/Min., {made} Clips bisher")
                 msgs, last_status = 0, now
-            if not a.channels and (now - last_refresh >= 600 or (not targets and now - last_refresh >= 120)):
+            if not a.channels and (now - last_refresh >= a.refresh or (not targets and now - last_refresh >= 120)):
                 last_refresh = now
                 refresh()
     except KeyboardInterrupt:
