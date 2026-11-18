@@ -216,6 +216,7 @@ class Chat:
         self.channels = set()
         self.sock = None
         self.buf = ""
+        self.reconnects = 0
         self.connect()
 
     def _send(self, line):
@@ -258,6 +259,7 @@ class Chat:
             data = b""
         if not data:
             log("Chat-Verbindung getrennt, verbinde neu...")
+            self.reconnects += 1
             self.connect()
             return []
         self.buf += data.decode("utf-8", errors="replace")
@@ -291,6 +293,12 @@ class Detector:
         self.last_clip = 0.0
         self.alpha = 0.02  # ~50 Sekunden Gedächtnis
 
+    def reset(self):
+        """Nach einer Unterbrechung neu lernen - sonst wirkt der normale Chat wie eine Explosion."""
+        self.events.clear()
+        self.baseline = None
+        self.started = time.time()
+
     def add(self, t, msg):
         score = 1.0 + (1.0 if HYPE_RE.search(msg) else 0.0)
         self.events.append((t, score, bool(CLIP_RE.search(msg))))
@@ -306,7 +314,7 @@ class Detector:
         ready = now - self.started >= self.warmup
         hot = ready and score >= self.min_score and score >= base * self.factor
         voted = ready and votes >= self.clip_votes
-        if not hot:
+        if not hot and (score > 0 or self.baseline < 3):
             self.baseline = self.baseline * (1 - self.alpha) + score * self.alpha
         if (hot or voted) and now - self.last_clip >= self.cooldown:
             self.last_clip = now
@@ -476,6 +484,7 @@ def main():
         log("TESTMODUS: Es werden keine echten Clips erstellt.")
 
     made, last_tick, last_status = 0, 0.0, time.time()
+    seen_reconnects = chat.reconnects
     clip_times, pause_until = deque(), 0.0
     last_refresh = time.time()
     msgs = 0
@@ -487,6 +496,11 @@ def main():
                     d.add(time.time(), msg)
                     msgs += 1
             now = time.time()
+            if chat.reconnects != seen_reconnects:
+                seen_reconnects = chat.reconnects
+                for d in dets.values():
+                    d.reset()
+                log("Nach der Unterbrechung: lerne das Chat-Tempo 60 Sekunden neu (keine Fehl-Clips).")
             if now - last_tick >= 1:
                 last_tick = now
                 for ch, d in list(dets.items()):
