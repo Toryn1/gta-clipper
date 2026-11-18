@@ -20,7 +20,7 @@ os.chdir(HERE)
 sys.path.insert(0, HERE)
 import youtube_upload as yt  # noqa: E402
 
-MAX_PRO_TAG = 14
+MAX_PRO_TAG = 10
 FERTIG = os.path.join(HERE, "fertig")
 
 
@@ -77,8 +77,8 @@ def main():
                 base = os.path.splitext(v)[0]
                 if os.path.exists(base + yt.MARKER):
                     continue
-                # nur Clips, die seit dem Start ausgewählt wurden (keine alten nachholen)
-                if os.path.getmtime(base + ".tiktok.txt") < start - 60:
+                # Clips der letzten 3 Stunden nachholen, ältere nicht
+                if os.path.getmtime(base + ".tiktok.txt") < start - 3 * 3600:
                     open(base + yt.MARKER, "w").write("übersprungen (vor dem Start ausgewählt)\n")
                     continue
                 if uploads_today() >= MAX_PRO_TAG:

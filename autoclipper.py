@@ -167,7 +167,7 @@ class Twitch:
             return d["data"][0]["id"], d["data"][0]["name"]
         sys.exit(f"Spiel '{name}' nicht gefunden.")
 
-    def top_streams(self, game_id, n, lang=None, exclude=(), min_viewers=0):
+    def top_streams(self, game_id, n, lang=None, exclude=(), min_viewers=0, skip_langs=()):
         """Holt die grössten Live-Streams (mehrere Seiten à 100), sortiert nach Zuschauern."""
         out, cursor = {}, None
         while len(out) < n:
@@ -185,6 +185,8 @@ class Twitch:
                 if st["viewer_count"] < min_viewers:
                     return out  # Liste ist absteigend sortiert -> Rest ist kleiner
                 if st["user_login"].lower() in exclude:
+                    continue
+                if (st.get("language") or "").lower() in skip_langs:
                     continue
                 out[st["user_login"].lower()] = {"id": st["user_id"], "viewers": st["viewer_count"],
                                                  "lang": st.get("language"), "name": st.get("user_name")}
@@ -421,6 +423,7 @@ def main():
     ap.add_argument("--client-id", default=os.environ.get("TWITCH_CLIENT_ID", CLIENT_ID))
     ap.add_argument("--game", default=GAME_NAME)
     ap.add_argument("--top", type=int, default=10, help="Anzahl grösste Streams (Standard 10, max. 200)")
+    ap.add_argument("--skip-lang", default="", help="Sprachen auslassen, z.B. de (wenn der deutsche Bot parallel läuft)")
     ap.add_argument("--min-viewers", type=int, default=0, help="Nur Streams mit mindestens so vielen Zuschauern")
     ap.add_argument("--max-clips-min", type=int, default=12, help="Höchstens so viele Clips pro Minute (alle Kanäle)")
     ap.add_argument("--refresh", type=int, default=300, help="Sekunden bis zur nächsten Stream-Aktualisierung")
@@ -455,7 +458,8 @@ def main():
     def pick_channels():
         if a.channels:
             return tw.users([c.strip().lower() for c in a.channels.split(",") if c.strip()])
-        return tw.top_streams(game_id, min(a.top, 200), a.lang, exclude, a.min_viewers)
+        return tw.top_streams(game_id, min(a.top, 200), a.lang, exclude, a.min_viewers,
+                              {x.strip().lower() for x in a.skip_lang.split(",") if x.strip()})
 
     chat = Chat()
     targets, dets = {}, {}
