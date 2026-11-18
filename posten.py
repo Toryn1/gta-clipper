@@ -147,24 +147,27 @@ def upload_youtube(approved):
     if not os.path.exists(yt.SECRET_FILE):
         print("\nYouTube ist noch nicht eingerichtet (client_secret.json fehlt) - überspringe YouTube.")
         return
-    todo = [(p, k) for p, k in approved if not os.path.exists(base(p) + ".youtube.txt")]
-    if not todo:
-        return
-    token = yt.get_access_token()
-    slots = yt.next_slots(len(todo))
-    print("\nYouTube: lade hoch und plane ...")
-    for (path, kind), slot in zip(todo, slots):
-        title, desc, tags = yt.read_meta(path, kind)
-        try:
-            vid = yt.upload(token, path, title, desc, tags, slot.astimezone().isoformat())
-        except Exception as e:
-            print(f"   Fehler bei {os.path.basename(path)}: {e}")
+    kanaele = yt.connected_channels() or ["1"]
+    for k in kanaele:  # jeder verbundene Kanal bekommt die freigegebenen Videos
+        yt.set_kanal(k)
+        todo = [(p, kd) for p, kd in approved if not os.path.exists(base(p) + yt.MARKER)]
+        if not todo:
             continue
-        with open(base(path) + ".youtube.txt", "w", encoding="utf-8") as f:
-            f.write(f"https://youtu.be/{vid}\nhttps://studio.youtube.com/video/{vid}/edit\n"
-                    f"geplant: {slot:%d.%m. %H:%M}\n")
-        print(f"   {yt.TAGE[slot.weekday()]} {slot:%H:%M}  {title}")
-    yt.notify("YouTube geplant", f"{len(todo)} Video(s) werden automatisch veröffentlicht")
+        token = yt.get_access_token()
+        print(f"\nYouTube Kanal {k} ({yt.channel_name(token)}): lade hoch und plane ...")
+        slots = yt.next_slots(len(todo))
+        for (path, kind), slot in zip(todo, slots):
+            title, desc, tags = yt.read_meta(path, kind)
+            try:
+                vid = yt.upload(token, path, title, desc, tags, slot.astimezone().isoformat())
+            except Exception as e:
+                print(f"   Fehler bei {os.path.basename(path)}: {e}")
+                continue
+            with open(base(path) + yt.MARKER, "w", encoding="utf-8") as f:
+                f.write(f"https://youtu.be/{vid}\nhttps://studio.youtube.com/video/{vid}/edit\n"
+                        f"geplant: {slot:%d.%m. %H:%M}\n")
+            print(f"   {yt.TAGE[slot.weekday()]} {slot:%H:%M}  {title}")
+        yt.notify(f"YouTube Kanal {k} geplant", f"{len(todo)} Video(s) werden automatisch veröffentlicht")
 
 
 def tiktok_list():

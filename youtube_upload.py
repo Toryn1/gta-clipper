@@ -49,6 +49,28 @@ from datetime import datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 SECRET_FILE = os.path.join(HERE, "client_secret.json")
 TOKEN_FILE = os.path.join(HERE, "youtube_token.json")
+KANAL = "1"
+MARKER = ".youtube.txt"
+
+
+def set_kanal(k):
+    """Kanal 1 = youtube_token.json / .youtube.txt, Kanal 2 = youtube_token_2.json / .youtube2.txt usw."""
+    global KANAL, TOKEN_FILE, MARKER
+    KANAL = str(k)
+    TOKEN_FILE = os.path.join(HERE, "youtube_token.json" if KANAL == "1" else f"youtube_token_{KANAL}.json")
+    MARKER = ".youtube.txt" if KANAL == "1" else f".youtube{KANAL}.txt"
+
+
+def connected_channels():
+    """Alle Kanäle, für die schon ein Login gespeichert ist."""
+    out = []
+    for f in sorted(os.listdir(HERE)):
+        if f == "youtube_token.json":
+            out.append("1")
+        m = re.match(r"youtube_token_(\d+)\.json$", f)
+        if m:
+            out.append(m.group(1))
+    return out
 SHORTS_DIR = os.path.join(HERE, "fertig")
 LONG_DIR = os.path.join(HERE, "youtube_lang")
 VIDEO_EXT = (".mp4", ".mov", ".m4v", ".mkv", ".webm")
@@ -284,7 +306,7 @@ def find_videos():
     for f in sorted(os.listdir(LONG_DIR)):
         if f.lower().endswith(VIDEO_EXT) and not f.startswith("."):
             todo.append((os.path.join(LONG_DIR, f), "long"))
-    return [(p, k) for p, k in todo if not os.path.exists(os.path.splitext(p)[0] + ".youtube.txt")]
+    return [(p, k) for p, k in todo if not os.path.exists(os.path.splitext(p)[0] + MARKER)]
 
 
 def is_skip(path):
@@ -301,7 +323,7 @@ def uploaded_today():
     shorts, longs, streamers = 0, 0, set()
     for root, _, files in os.walk(HERE):
         for f in files:
-            if f.endswith(".youtube.txt"):
+            if f.endswith(MARKER):
                 p = os.path.join(root, f)
                 if datetime.fromtimestamp(os.path.getmtime(p)).date() == today:
                     if os.path.abspath(root).startswith(os.path.abspath(LONG_DIR)):
@@ -357,6 +379,14 @@ def next_slots(n):
 
 def main():
     os.chdir(HERE)
+    if "--kanal" in sys.argv:
+        set_kanal(sys.argv[sys.argv.index("--kanal") + 1])
+    if "--nur-login" in sys.argv:
+        token = get_access_token()
+        log(f"Kanal {KANAL} verbunden: >>> {channel_name(token)} <<<")
+        notify("YouTube verbunden", f"Kanal {KANAL}: {channel_name(token)}")
+        return
+    log(f"YouTube-Kanal {KANAL}")
     planen = "--planen" in sys.argv
     todo = apply_rules(find_videos(), ignore_limits="--alle" in sys.argv)
     if not todo:
@@ -394,7 +424,7 @@ def main():
             log(f"  Fehler: {e}")
             continue
         link = f"https://studio.youtube.com/video/{vid}/edit"
-        with open(os.path.splitext(path)[0] + ".youtube.txt", "w", encoding="utf-8") as f:
+        with open(os.path.splitext(path)[0] + MARKER, "w", encoding="utf-8") as f:
             f.write(f"https://youtu.be/{vid}\n{link}\n")
             if slot:
                 f.write(f"{'geplant' if planen else 'empfohlen'}: {slot:%d.%m. %H:%M}\n")
