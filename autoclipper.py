@@ -186,7 +186,8 @@ class Twitch:
                     return out  # Liste ist absteigend sortiert -> Rest ist kleiner
                 if st["user_login"].lower() in exclude:
                     continue
-                out[st["user_login"].lower()] = {"id": st["user_id"], "viewers": st["viewer_count"]}
+                out[st["user_login"].lower()] = {"id": st["user_id"], "viewers": st["viewer_count"],
+                                                 "lang": st.get("language"), "name": st.get("user_name")}
                 if len(out) >= n:
                     break
             cursor = (d.get("pagination") or {}).get("cursor")
@@ -198,7 +199,8 @@ class Twitch:
         s, d = self.req("GET", "users", {"login": logins})
         if s != 200:
             sys.exit(f"Konnte Kanäle nicht laden ({s}): {d.get('message', '')}")
-        return {u["login"].lower(): {"id": u["id"], "viewers": None} for u in d.get("data", [])}
+        return {u["login"].lower(): {"id": u["id"], "viewers": None, "lang": None,
+                                     "name": u.get("display_name")} for u in d.get("data", [])}
 
     def create_clip(self, broadcaster_id):
         return self.req("POST", "clips", {"broadcaster_id": broadcaster_id})
@@ -354,6 +356,14 @@ def notify(title, text):
                    capture_output=True)
 
 
+def game_folder(game_name):
+    """Eigener Ordner pro Spiel: GTA 6 -> 'GTA 6', sonst der Spielname."""
+    g = (game_name or "").lower()
+    if "grand theft auto vi" in g or g in ("gta 6", "gta vi", "gta6"):
+        return "GTA 6"
+    return re.sub(r'[\\/:*?"<>|]', "", game_name or "Andere").strip() or "Andere"
+
+
 def make_stacked(path, channel):
     """Schneidet den Clip automatisch mit eigenem Gameplay zusammen (stacker.py), falls vorhanden."""
     try:
@@ -373,9 +383,9 @@ def make_stacked(path, channel):
 STACK_LOCK = threading.Lock()
 
 
-def download(url, channel, outdir):
+def download(url, channel, outdir, game_name=None, info=None):
     time.sleep(20)  # Twitch braucht ein paar Sekunden, bis der Clip fertig ist
-    folder = os.path.join(outdir, channel)          # eigener Ordner pro Streamer
+    folder = os.path.join(outdir, game_folder(game_name), channel)  # clips/<Spiel>/<Streamer>/
     os.makedirs(folder, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d %H-%M")
     tmpl = os.path.join(folder, f"{stamp} - %(title).80s [%(id)s].%(ext)s")
@@ -384,6 +394,13 @@ def download(url, channel, outdir):
     if r.returncode == 0:
         path = (r.stdout.strip().splitlines() or [folder])[-1]
         log(f"  gespeichert: {path}")
+        try:  # Infos für Captions (Sprache, Spiel) neben den Clip legen
+            meta = {"streamer": channel, "display_name": (info or {}).get("name") or channel,
+                    "lang": (info or {}).get("lang") or "de", "game": game_name or "", "url": url}
+            with open(os.path.splitext(path)[0] + ".info.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False)
+        except OSError:
+            pass
         notify("Neuer Clip gespeichert", f"{channel}: {os.path.basename(path)}")
         make_stacked(path, channel)
     else:
@@ -494,7 +511,8 @@ def main():
                         made += 1
                         log(f"*** CLIP #{made}: {ch} | {reason}\n    {url}")
                         if a.download:
-                            threading.Thread(target=download, args=(url, ch, a.out), daemon=True).start()
+                            threading.Thread(target=download, args=(url, ch, a.out, game_name, targets.get(ch)),
+                                             daemon=True).start()
                         else:
                             notify("Neuer Clip erstellt", f"{ch} - Link steht im Terminal")
                     elif s == 403:

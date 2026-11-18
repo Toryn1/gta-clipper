@@ -52,7 +52,7 @@ TOKEN_FILE = os.path.join(HERE, "youtube_token.json")
 SHORTS_DIR = os.path.join(HERE, "fertig")
 LONG_DIR = os.path.join(HERE, "youtube_lang")
 VIDEO_EXT = (".mp4", ".mov", ".m4v", ".mkv", ".webm")
-SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+SCOPE = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 PORT = 8765
 REDIRECT = f"http://127.0.0.1:{PORT}"
 
@@ -193,7 +193,7 @@ def read_meta(video, kind):
         try:
             sys.path.insert(0, HERE)
             import captions
-            captions.write_caption_file(video, streamer)
+            captions.write_caption_file(video, streamer)  # liest Sprache/Spiel aus <video>.info.json
         except Exception:
             pass
     if kind == "short":
@@ -208,6 +208,7 @@ def read_meta(video, kind):
     if os.path.exists(txt):
         with open(txt, encoding="utf-8") as f:
             raw = f.read()
+        raw = raw.split("=== TIKTOK ===")[0]
         head, _, body = raw.partition("---")
         m = re.search(r"^TITEL:\s*(.+)$", head, re.M)
         t = re.search(r"^TAGS:\s*(.+)$", head, re.M)
@@ -241,6 +242,35 @@ def upload(token, path, title, desc, tags, publish_at=None):
                                      headers={"Content-Type": "video/*", "Content-Length": str(size)})
         with urllib.request.urlopen(put, timeout=max(600, size // 200_000)) as r:
             return json.loads(r.read())["id"]
+
+
+def api_get(token, path, params):
+    url = "https://www.googleapis.com/youtube/v3/" + path + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def channel_name(token):
+    """Name des Kanals, auf den hochgeladen wird."""
+    try:
+        items = api_get(token, "channels", {"part": "snippet", "mine": "true"}).get("items", [])
+        return items[0]["snippet"]["title"] if items else "(kein Kanal gefunden)"
+    except Exception as e:
+        return f"(unbekannt: {e})"
+
+
+def video_info(token, vid):
+    try:
+        items = api_get(token, "videos", {"part": "snippet,status", "id": vid}).get("items", [])
+        if not items:
+            return "Video nicht gefunden"
+        st, sn = items[0]["status"], items[0]["snippet"]
+        extra = st.get("rejectionReason") or st.get("failureReason") or ""
+        return (f"Kanal: {sn.get('channelTitle')} | Upload: {st.get('uploadStatus')} | "
+                f"Sichtbarkeit: {st.get('privacyStatus')} {extra}").strip()
+    except Exception as e:
+        return f"(Status unbekannt: {e})"
 
 
 def find_videos():

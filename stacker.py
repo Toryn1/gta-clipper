@@ -150,6 +150,9 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
             try:
                 sys.path.insert(0, HERE)
                 import captions
+                info_src = os.path.splitext(clip_path)[0] + ".info.json"
+                if os.path.exists(info_src):  # Infos mit ins fertige Video übernehmen
+                    shutil.copyfile(info_src, os.path.splitext(out_path)[0] + ".info.json")
                 captions.write_caption_file(out_path, streamer)
             except Exception as e:
                 log(f"(Caption konnte nicht erstellt werden: {e})")
@@ -162,8 +165,15 @@ def make_video(clip_path, streamer, out_path, ffmpeg=None):
 
 
 def out_path_for(clip_path, streamer):
+    """Spiegelt die Ordner: clips/GTA 6/<streamer>/x.mp4 -> fertig/GTA 6/<streamer>/x.mp4"""
     name = os.path.splitext(os.path.basename(clip_path))[0] + ".mp4"
-    return os.path.join(OUT_DIR, streamer, name)
+    try:
+        rel = os.path.relpath(os.path.dirname(os.path.abspath(clip_path)), CLIPS_DIR)
+    except ValueError:
+        rel = streamer
+    if rel.startswith(".."):
+        rel = streamer
+    return os.path.join(OUT_DIR, rel, name)
 
 
 def make_for_clip(clip_path, streamer):
@@ -182,13 +192,11 @@ def process_all(redo=False):
         log("Noch keine Clips im Ordner 'clips'.")
         return
     todo = []
-    for streamer in sorted(os.listdir(CLIPS_DIR)):
-        sdir = os.path.join(CLIPS_DIR, streamer)
-        if not os.path.isdir(sdir):
-            continue
-        for f in sorted(os.listdir(sdir)):
-            if f.lower().endswith(VIDEO_EXT) and not f.startswith("."):
-                src = os.path.join(sdir, f)
+    for root, _, files in sorted(os.walk(CLIPS_DIR)):
+        streamer = os.path.basename(root)
+        for f in sorted(files):
+            if f.lower().endswith(VIDEO_EXT) and not f.startswith(".") and ".part" not in f:
+                src = os.path.join(root, f)
                 dst = out_path_for(src, streamer)
                 if redo or not os.path.exists(dst):
                     todo.append((src, streamer, dst))
